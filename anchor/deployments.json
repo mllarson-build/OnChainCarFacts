@@ -1,0 +1,18 @@
+{
+  "hardhat": {
+    "address": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+    "txHash": "0x796ce0dfb9d6d2cfef45c96a3efcd1e40316eedde6ca56c3f69ba93780ddfdd9",
+    "blockNumber": 1,
+    "gasUsed": "549670",
+    "deployer": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+    "deployedAt": "2026-04-18T04:19:07.779Z"
+  },
+  "baseSepolia": {
+    "address": "0x1380b4cBC2Bdb10e46F720124C8174bc363aE4bF",
+    "txHash": "0xf566c99da45feee5da821b55547004eb25b3d92e5932c0c3ab076961cb4fbfcd",
+    "blockNumber": 40358849,
+    "gasUsed": "549670",
+    "deployer": "0x00cC6fc336E7A64d843A7eEE6715277CdeC8Fd3d",
+    "deployedAt": "2026-04-18T04:19:46.618Z"
+  }
+}
