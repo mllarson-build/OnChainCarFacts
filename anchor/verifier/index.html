@@ -1,0 +1,268 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>OnChainCarFacts — Record Anchor Verifier</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #161a22;
+    --panel-2: #1e2430;
+    --fg: #e6e6e6;
+    --muted: #8a93a6;
+    --accent: #7dd3fc;
+    --ok: #4ade80;
+    --bad: #f87171;
+    --border: #2a3140;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--bg); color: var(--fg);
+    font: 15px/1.5 -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif;
+  }
+  main {
+    max-width: 880px;
+    margin: 0 auto;
+    padding: 32px 20px 80px;
+  }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  .sub { color: var(--muted); font-size: 13px; margin-bottom: 28px; }
+  .sub code { font-family: var(--mono); color: var(--accent); }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px;
+    margin-bottom: 18px;
+  }
+  label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 8px; }
+  textarea {
+    width: 100%; min-height: 280px;
+    background: var(--panel-2); color: var(--fg);
+    border: 1px solid var(--border); border-radius: 6px;
+    font-family: var(--mono); font-size: 12.5px; line-height: 1.5;
+    padding: 12px; resize: vertical;
+  }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
+  button {
+    background: var(--accent); color: #001018;
+    border: 0; border-radius: 6px;
+    padding: 10px 16px; font-weight: 600; cursor: pointer;
+    font-size: 13px;
+  }
+  button.ghost {
+    background: transparent; color: var(--fg);
+    border: 1px solid var(--border);
+  }
+  button:disabled { opacity: 0.5; cursor: wait; }
+  .kv { display: grid; grid-template-columns: 160px 1fr; gap: 8px 14px; font-size: 13.5px; }
+  .kv .k { color: var(--muted); }
+  .kv .v { font-family: var(--mono); word-break: break-all; }
+  .status { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; font-size: 15px; }
+  .status.ok  { color: var(--ok); }
+  .status.bad { color: var(--bad); }
+  .status.pending { color: var(--muted); }
+  a { color: var(--accent); }
+  .hint { color: var(--muted); font-size: 12px; margin-top: 10px; }
+  .err { color: var(--bad); font-family: var(--mono); font-size: 12px; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Record Anchor Verifier</h1>
+  <div class="sub">
+    Base Sepolia · contract <code id="addr"></code>
+  </div>
+
+  <div class="panel">
+    <label for="rec">Vehicle record (JSON)</label>
+    <textarea id="rec" spellcheck="false"></textarea>
+    <div class="row">
+      <button id="verify">Compute hash &amp; verify on-chain</button>
+      <button id="sample" class="ghost">Load sample (the one we anchored)</button>
+      <button id="tamper" class="ghost">Tamper: +1 mile</button>
+    </div>
+    <div class="hint">
+      The page computes <code>keccak256(canonicalize(record))</code> locally in your browser,
+      then calls <code>getAnchor(hash)</code> on the deployed contract over a public Base Sepolia RPC.
+      Nothing is written to chain from this page — read-only.
+    </div>
+  </div>
+
+  <div class="panel" id="results" style="display:none">
+    <div class="kv">
+      <div class="k">Computed hash</div>
+      <div class="v" id="out-hash"></div>
+
+      <div class="k">Status</div>
+      <div class="v"><span class="status" id="out-status"></span></div>
+
+      <div class="k">Timestamp</div>
+      <div class="v" id="out-time"></div>
+
+      <div class="k">Block</div>
+      <div class="v" id="out-block"></div>
+
+      <div class="k">Submitter</div>
+      <div class="v" id="out-submitter"></div>
+
+      <div class="k">Anchor tx</div>
+      <div class="v" id="out-tx"></div>
+    </div>
+    <div class="err" id="out-err"></div>
+  </div>
+</main>
+
+<script type="module">
+import {
+  JsonRpcProvider, Contract, AbiCoder, keccak256, ZeroHash
+} from "https://esm.sh/ethers@6.13.4";
+
+// ---- config ----
+const CONTRACT   = "0x1380b4cBC2Bdb10e46F720124C8174bc363aE4bF";
+const RPC_URL    = "https://sepolia.base.org";
+const DEPLOY_BLOCK = 40358849;
+const EXPLORER   = "https://sepolia.basescan.org";
+const ABI = [
+  "function getAnchor(bytes32) view returns (uint256, uint256, address)",
+  "event Anchored(bytes32 indexed hash, uint256 timestamp, uint256 blockNumber, address indexed submitter)"
+];
+
+// ---- canonicalize + hash — must match anchor/src/canonicalize.ts exactly ----
+const EVENT_TYPES = [
+  "title_transfer", "odometer_reading", "service", "accident",
+  "total_loss", "salvage", "junk", "inspection",
+];
+const FIELD_TYPES = [
+  "string",  "string", "string", "uint8",
+  "string",  "string", "string", "uint256",
+  "string",  "string", "string", "address",
+  "bytes32", "string",
+];
+const coder = AbiCoder.defaultAbiCoder();
+
+function canonicalize(r) {
+  const idx = EVENT_TYPES.indexOf(r.eventType);
+  if (idx === -1) throw new Error(`Unknown eventType: ${r.eventType}`);
+  const prev = r.previousRecordHash ?? ZeroHash;
+  const vals = [
+    r.schemaVersion, r.recordId, r.vin, idx,
+    r.location.countryCode, r.location.adminArea, r.location.postalCode ?? "",
+    r.mileage, r.odometerUnit,
+    r.timestamp, r.recordCreatedAt,
+    r.contributorAddress, prev, r.sourceIdentifier,
+  ];
+  return coder.encode(FIELD_TYPES, vals);
+}
+function hashRecord(r) { return keccak256(canonicalize(r)); }
+
+// ---- sample (same record anchor-one.ts anchored) ----
+const SAMPLE = {
+  schemaVersion: "1.0",
+  recordId: "550e8400-e29b-41d4-a716-446655440000",
+  vin: "1HGCM82633A004352",
+  eventType: "service",
+  location: { countryCode: "US", adminArea: "TX", postalCode: "75001" },
+  mileage: 45000,
+  odometerUnit: "mi",
+  timestamp: "2025-06-15T10:30:00-05:00",
+  recordCreatedAt: "2025-06-15T11:00:00-05:00",
+  contributorAddress: "0x1234567890abcdef1234567890abcdef12345678",
+  previousRecordHash: null,
+  sourceIdentifier: "INV-2025-0042",
+};
+
+// ---- DOM wiring ----
+document.getElementById("addr").textContent = CONTRACT;
+const ta = document.getElementById("rec");
+ta.value = JSON.stringify(SAMPLE, null, 2);
+
+const $ = (id) => document.getElementById(id);
+const results = $("results");
+const out = {
+  hash:      $("out-hash"),
+  status:    $("out-status"),
+  time:      $("out-time"),
+  block:     $("out-block"),
+  submitter: $("out-submitter"),
+  tx:        $("out-tx"),
+  err:       $("out-err"),
+};
+
+function clearOut() {
+  results.style.display = "block";
+  for (const k of ["hash","time","block","submitter","tx"]) out[k].textContent = "";
+  out.err.textContent = "";
+  out.status.textContent = "…";
+  out.status.className = "status pending";
+}
+
+$("sample").addEventListener("click", () => {
+  ta.value = JSON.stringify(SAMPLE, null, 2);
+});
+
+$("tamper").addEventListener("click", () => {
+  try {
+    const r = JSON.parse(ta.value);
+    r.mileage = (Number(r.mileage) || 0) + 1;
+    ta.value = JSON.stringify(r, null, 2);
+  } catch (e) {
+    alert("Record JSON is not valid: " + e.message);
+  }
+});
+
+$("verify").addEventListener("click", async () => {
+  const btn = $("verify");
+  btn.disabled = true;
+  clearOut();
+  try {
+    const record = JSON.parse(ta.value);
+    const hash = hashRecord(record);
+    out.hash.textContent = hash;
+
+    const provider = new JsonRpcProvider(RPC_URL);
+    const contract = new Contract(CONTRACT, ABI, provider);
+    const [ts, bn, sub] = await contract.getAnchor(hash);
+
+    if (ts === 0n) {
+      out.status.textContent = "✗  Not anchored on this contract";
+      out.status.className = "status bad";
+      return;
+    }
+
+    out.status.textContent = "✓  Anchored";
+    out.status.className = "status ok";
+    const date = new Date(Number(ts) * 1000);
+    out.time.textContent = `${date.toISOString()}  (unix ${ts})`;
+    out.block.textContent = bn.toString();
+    out.submitter.innerHTML =
+      `<a href="${EXPLORER}/address/${sub}" target="_blank" rel="noreferrer">${sub}</a>`;
+
+    // Best-effort: look up the Anchored event to link the tx
+    try {
+      const filter = contract.filters.Anchored(hash);
+      const logs = await contract.queryFilter(filter, DEPLOY_BLOCK, "latest");
+      if (logs.length) {
+        const tx = logs[0].transactionHash;
+        out.tx.innerHTML =
+          `<a href="${EXPLORER}/tx/${tx}" target="_blank" rel="noreferrer">${tx}</a>`;
+      } else {
+        out.tx.textContent = "(not found in event logs — anchor tuple still valid)";
+      }
+    } catch (e) {
+      out.tx.textContent = "(event lookup failed; anchor tuple above is authoritative)";
+    }
+  } catch (e) {
+    out.status.textContent = "error";
+    out.status.className = "status bad";
+    out.err.textContent = e?.message || String(e);
+  } finally {
+    btn.disabled = false;
+  }
+});
+</script>
+</body>
+</html>
