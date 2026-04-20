@@ -81,9 +81,9 @@
     <label for="rec">Vehicle record (JSON)</label>
     <textarea id="rec" spellcheck="false"></textarea>
     <div class="row">
-      <button id="verify">Compute hash &amp; verify on-chain</button>
       <button id="sample" class="ghost">Load sample (the one we anchored)</button>
       <button id="tamper" class="ghost">Tamper: +1 mile</button>
+      <button id="verify" style="margin-left: auto">Compute hash &amp; verify on-chain</button>
     </div>
     <div class="hint">
       The page computes <code>keccak256(canonicalize(record))</code> locally in your browser,
