@@ -68,6 +68,50 @@
   a { color: var(--accent); }
   .hint { color: var(--muted); font-size: 12px; margin-top: 10px; }
   .err { color: var(--bad); font-family: var(--mono); font-size: 12px; white-space: pre-wrap; }
+
+  /* Tamper panel */
+  .panel-title { font-size: 16px; font-weight: 600; margin-bottom: 4px; }
+  .tamper-grid {
+    display: grid;
+    grid-template-columns: 160px 1fr;
+    gap: 12px 14px;
+    margin-top: 14px;
+    align-items: center;
+  }
+  .tamper-label { color: var(--muted); font-size: 13px; }
+  .tamper-controls {
+    display: flex; gap: 6px; flex-wrap: wrap; align-items: center;
+  }
+  .tamper-input {
+    background: var(--panel-2); color: var(--fg);
+    border: 1px solid var(--border); border-radius: 6px;
+    font-family: var(--mono); font-size: 13px;
+    padding: 7px 10px; flex: 1; min-width: 220px;
+  }
+  .current-value {
+    font-family: var(--mono); color: var(--accent);
+    padding: 0 8px; font-weight: 600; font-size: 14px;
+    min-width: 70px; text-align: center;
+  }
+  button.step, button.reset-field {
+    padding: 6px 10px; font-size: 12px;
+  }
+  .hash-compare {
+    margin-top: 18px; padding-top: 14px;
+    border-top: 1px solid var(--border);
+  }
+  .hash-row {
+    display: grid; grid-template-columns: 160px 1fr;
+    gap: 8px 14px; font-size: 13px; margin-bottom: 4px;
+  }
+  .hash-row .k { color: var(--muted); }
+  .hash-row .v { font-family: var(--mono); word-break: break-all; }
+  .match-badge {
+    margin-top: 10px; font-weight: 600; font-size: 14px;
+  }
+  .match-badge.ok  { color: var(--ok); }
+  .match-badge.bad { color: var(--bad); }
+  .match-badge.pending { color: var(--muted); }
 </style>
 </head>
 <body>
@@ -82,13 +126,58 @@
     <textarea id="rec" spellcheck="false"></textarea>
     <div class="row">
       <button id="sample" class="ghost">Load sample (the one we anchored)</button>
-      <button id="tamper" class="ghost">Tamper: +1 mile</button>
       <button id="verify" style="margin-left: auto">Compute hash &amp; verify on-chain</button>
     </div>
     <div class="hint">
       The page computes <code>keccak256(canonicalize(record))</code> locally in your browser,
       then calls <code>getAnchor(hash)</code> on the deployed contract over a public Base Sepolia RPC.
       Nothing is written to chain from this page — read-only.
+    </div>
+  </div>
+
+  <div class="panel" id="tamper-panel">
+    <div class="panel-title">Try tampering</div>
+    <div class="hint" style="margin-top:0">
+      Change any field below and watch the hash change in real time.
+      The anchored record is immutable on Base Sepolia — any mutation produces a different hash that will never match.
+    </div>
+
+    <div class="tamper-grid">
+      <div class="tamper-label">Mileage</div>
+      <div class="tamper-controls">
+        <button class="step ghost" data-field="mileage" data-delta="-5000">−5000</button>
+        <button class="step ghost" data-field="mileage" data-delta="-1">−1</button>
+        <span class="current-value" id="mileage-display">45000</span>
+        <button class="step ghost" data-field="mileage" data-delta="1">+1</button>
+        <button class="step ghost" data-field="mileage" data-delta="5000">+5000</button>
+        <button class="reset-field ghost" data-field="mileage">reset</button>
+      </div>
+
+      <div class="tamper-label">VIN</div>
+      <div class="tamper-controls">
+        <input type="text" id="vin-input" class="tamper-input" spellcheck="false">
+        <button class="reset-field ghost" data-field="vin">reset</button>
+      </div>
+
+      <div class="tamper-label">Event date</div>
+      <div class="tamper-controls">
+        <button class="step ghost" data-field="timestamp" data-delta="-1">−1 day</button>
+        <span class="current-value" id="timestamp-display">2025-06-15</span>
+        <button class="step ghost" data-field="timestamp" data-delta="1">+1 day</button>
+        <button class="reset-field ghost" data-field="timestamp">reset</button>
+      </div>
+    </div>
+
+    <div class="hash-compare">
+      <div class="hash-row">
+        <span class="k">Your computed hash</span>
+        <span class="v" id="live-hash">—</span>
+      </div>
+      <div class="hash-row">
+        <span class="k">Anchored hash</span>
+        <span class="v" id="anchored-hash">—</span>
+      </div>
+      <div class="match-badge pending" id="match-badge">…</div>
     </div>
   </div>
 
@@ -200,19 +289,92 @@ function clearOut() {
   out.status.className = "status pending";
 }
 
-$("sample").addEventListener("click", () => {
-  ta.value = JSON.stringify(SAMPLE, null, 2);
-});
+// The hash of the anchored SAMPLE record. Computed once here so the
+// "matches / does not match" indicator works even before any network call.
+const ANCHORED_HASH = hashRecord(SAMPLE).toLowerCase();
+$("anchored-hash").textContent = ANCHORED_HASH;
 
-$("tamper").addEventListener("click", () => {
+function syncPanelFromJSON() {
   try {
     const r = JSON.parse(ta.value);
-    r.mileage = (Number(r.mileage) || 0) + 1;
+    $("mileage-display").textContent = String(r.mileage);
+    // Don't clobber user typing
+    const vinInput = $("vin-input");
+    if (document.activeElement !== vinInput) vinInput.value = r.vin || "";
+    $("timestamp-display").textContent = (r.timestamp || "").slice(0, 10);
+
+    const h = hashRecord(r).toLowerCase();
+    $("live-hash").textContent = h;
+    const badge = $("match-badge");
+    if (h === ANCHORED_HASH) {
+      badge.textContent = "✓  Matches anchored hash — this record is authentic";
+      badge.className = "match-badge ok";
+    } else {
+      badge.textContent = "✗  Does not match — record differs from what was anchored";
+      badge.className = "match-badge bad";
+    }
+  } catch (e) {
+    $("live-hash").textContent = "(invalid JSON — fix the record above)";
+    $("match-badge").textContent = "";
+    $("match-badge").className = "match-badge pending";
+  }
+}
+
+function mutateRecord(fn) {
+  try {
+    const r = JSON.parse(ta.value);
+    fn(r);
     ta.value = JSON.stringify(r, null, 2);
+    syncPanelFromJSON();
   } catch (e) {
     alert("Record JSON is not valid: " + e.message);
   }
+}
+
+$("sample").addEventListener("click", () => {
+  ta.value = JSON.stringify(SAMPLE, null, 2);
+  syncPanelFromJSON();
 });
+
+// Stepper buttons (mileage ±N, timestamp ±N days)
+document.querySelectorAll("button.step").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const field = btn.dataset.field;
+    const delta = Number(btn.dataset.delta);
+    mutateRecord((r) => {
+      if (field === "mileage") {
+        r.mileage = (Number(r.mileage) || 0) + delta;
+      } else if (field === "timestamp") {
+        // Shift the date part by N days while preserving time + timezone suffix.
+        const m = (r.timestamp || "").match(/^(\d{4})-(\d{2})-(\d{2})(T.*)$/);
+        if (!m) return;
+        const [, y, mo, da, rest] = m;
+        const d = new Date(Date.UTC(+y, +mo - 1, +da));
+        d.setUTCDate(d.getUTCDate() + delta);
+        r.timestamp = `${d.toISOString().slice(0, 10)}${rest}`;
+      }
+    });
+  });
+});
+
+// Per-field reset buttons
+document.querySelectorAll("button.reset-field").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const field = btn.dataset.field;
+    mutateRecord((r) => { r[field] = SAMPLE[field]; });
+  });
+});
+
+// Free-form VIN editing
+$("vin-input").addEventListener("input", () => {
+  mutateRecord((r) => { r.vin = $("vin-input").value; });
+});
+
+// Typing directly in the JSON textarea also updates the live panel
+ta.addEventListener("input", syncPanelFromJSON);
+
+// Initial paint
+syncPanelFromJSON();
 
 $("verify").addEventListener("click", async () => {
   const btn = $("verify");
