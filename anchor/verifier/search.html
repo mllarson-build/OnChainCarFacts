@@ -1,0 +1,380 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>OnChainCarFacts — Vehicle History Search</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #161a22;
+    --panel-2: #1e2430;
+    --fg: #e6e6e6;
+    --muted: #8a93a6;
+    --accent: #7dd3fc;
+    --ok: #4ade80;
+    --bad: #f87171;
+    --border: #2a3140;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--bg); color: var(--fg);
+    font: 15px/1.5 -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif;
+  }
+  main {
+    max-width: 880px;
+    margin: 0 auto;
+    padding: 32px 20px 80px;
+  }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  .sub { color: var(--muted); font-size: 13px; margin-bottom: 12px; }
+  .sub code { font-family: var(--mono); color: var(--accent); }
+  .nav { font-size: 13px; margin-bottom: 24px; }
+  .nav a { color: var(--accent); text-decoration: none; }
+  .nav a:hover { text-decoration: underline; }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px;
+    margin-bottom: 18px;
+  }
+  label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 8px; }
+  input[type="text"] {
+    width: 100%;
+    background: var(--panel-2); color: var(--fg);
+    border: 1px solid var(--border); border-radius: 6px;
+    font-family: var(--mono); font-size: 14px;
+    padding: 10px 12px;
+  }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 12px; align-items: center; }
+  button {
+    background: var(--accent); color: #001018;
+    border: 0; border-radius: 6px;
+    padding: 10px 16px; font-weight: 600; cursor: pointer;
+    font-size: 13px;
+  }
+  button:disabled { opacity: 0.5; cursor: wait; }
+  .hint { color: var(--muted); font-size: 12px; margin-top: 10px; }
+
+  /* Record cards */
+  .record-card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px;
+    margin-bottom: 14px;
+  }
+  .record-card.unanchored { border-color: var(--bad); }
+  .record-card.pending { opacity: 0.6; }
+  .record-head {
+    display: flex; align-items: baseline; gap: 12px;
+    margin-bottom: 2px; flex-wrap: wrap;
+  }
+  .event-badge {
+    display: inline-block;
+    background: var(--panel-2);
+    color: var(--accent);
+    border: 1px solid var(--border);
+    padding: 3px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .event-date {
+    color: var(--muted); font-size: 13px;
+  }
+  .event-summary {
+    font-size: 15px; font-weight: 500; margin-bottom: 14px;
+  }
+  .kv {
+    display: grid; grid-template-columns: 140px 1fr;
+    gap: 6px 14px; font-size: 13px;
+  }
+  .kv .k { color: var(--muted); }
+  .kv .v { font-family: var(--mono); word-break: break-all; }
+  .kv .v.plain { font-family: inherit; }
+  .status {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-weight: 600; font-size: 13px;
+  }
+  .status.ok  { color: var(--ok); }
+  .status.bad { color: var(--bad); }
+  .status.pending { color: var(--muted); }
+  .chain-link {
+    margin-top: 12px;
+    padding-top: 10px;
+    border-top: 1px dashed var(--border);
+    font-size: 12px; color: var(--muted);
+  }
+  .chain-link .mono { font-family: var(--mono); color: var(--fg); }
+  .chain-link.broken { color: var(--bad); }
+  a { color: var(--accent); }
+  .empty {
+    color: var(--muted); text-align: center; padding: 40px 20px;
+    font-size: 14px;
+  }
+  details summary {
+    cursor: pointer; color: var(--muted); font-size: 12px;
+    margin-top: 10px;
+  }
+  details pre {
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 10px;
+    font-size: 11.5px;
+    overflow: auto;
+    margin-top: 8px;
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>Vehicle History Search</h1>
+  <div class="sub">
+    Base Sepolia · contract <code id="addr"></code>
+  </div>
+  <div class="nav">
+    <a href="/">← Single-record verifier</a>
+  </div>
+
+  <div class="panel">
+    <label for="vin">VIN</label>
+    <input type="text" id="vin" value="1HGCM82633A004352" spellcheck="false">
+    <div class="row">
+      <button id="search">Search on-chain history</button>
+    </div>
+    <div class="hint">
+      This page loads records from <code>records.json</code>, filters by VIN,
+      then verifies each one against the contract by computing
+      <code>keccak256(canonicalize(record))</code> and calling <code>getAnchor(hash)</code>.
+      Only the record hashes live on-chain — the record contents themselves come from the off-chain file.
+    </div>
+  </div>
+
+  <div id="results"></div>
+</main>
+
+<script type="module">
+import {
+  JsonRpcProvider, Contract, AbiCoder, keccak256, ZeroHash
+} from "https://esm.sh/ethers@6.13.4";
+
+// ---- config ----
+const CONTRACT   = "0x1380b4cBC2Bdb10e46F720124C8174bc363aE4bF";
+const RPC_URL    = "https://sepolia.base.org";
+const EXPLORER   = "https://sepolia.basescan.org";
+const ABI = [
+  "function getAnchor(bytes32) view returns (uint256, uint256, address)",
+];
+
+// ---- canonicalize + hash — must match anchor/src/canonicalize.ts exactly ----
+const EVENT_TYPES = [
+  "title_transfer", "odometer_reading", "service", "accident",
+  "total_loss", "salvage", "junk", "inspection",
+];
+const FIELD_TYPES = [
+  "string",  "string", "string", "uint8",
+  "string",  "string", "string", "uint256",
+  "string",  "string", "string", "address",
+  "bytes32", "string",
+];
+const coder = AbiCoder.defaultAbiCoder();
+
+function canonicalize(r) {
+  const idx = EVENT_TYPES.indexOf(r.eventType);
+  if (idx === -1) throw new Error(`Unknown eventType: ${r.eventType}`);
+  const prev = r.previousRecordHash ?? ZeroHash;
+  const vals = [
+    r.schemaVersion, r.recordId, r.vin, idx,
+    r.location.countryCode, r.location.adminArea, r.location.postalCode ?? "",
+    r.mileage, r.odometerUnit,
+    r.timestamp, r.recordCreatedAt,
+    r.contributorAddress, prev, r.sourceIdentifier,
+  ];
+  return coder.encode(FIELD_TYPES, vals);
+}
+function hashRecord(r) { return keccak256(canonicalize(r)); }
+
+// ---- formatting helpers ----
+function fmtEvent(s) {
+  return s.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+}
+function fmtMileage(n, unit) {
+  return `${Number(n).toLocaleString()} ${unit || ""}`.trim();
+}
+function fmtLocation(loc) {
+  if (!loc) return "";
+  const parts = [loc.adminArea, loc.countryCode].filter(Boolean);
+  return parts.join(", ");
+}
+function fmtEventDate(ts) {
+  return (ts || "").slice(0, 10);
+}
+function shortHash(h) {
+  if (!h || h === ZeroHash) return "(none)";
+  return `${h.slice(0, 10)}…${h.slice(-6)}`;
+}
+
+// ---- DOM ----
+document.getElementById("addr").textContent = CONTRACT;
+const $ = (id) => document.getElementById(id);
+const resultsEl = $("results");
+
+async function search() {
+  const vin = $("vin").value.trim().toUpperCase();
+  $("vin").value = vin;
+
+  if (!vin) {
+    resultsEl.innerHTML = `<div class="empty">Enter a VIN to search.</div>`;
+    return;
+  }
+
+  $("search").disabled = true;
+  resultsEl.innerHTML = `<div class="empty">Loading records…</div>`;
+
+  let all;
+  try {
+    const res = await fetch("records.json", { cache: "no-store" });
+    all = await res.json();
+  } catch (e) {
+    resultsEl.innerHTML = `<div class="empty">Failed to load records.json: ${e.message}</div>`;
+    $("search").disabled = false;
+    return;
+  }
+
+  const matches = all
+    .filter(r => (r.vin || "").toUpperCase() === vin)
+    .sort((a, b) => (a.timestamp || "").localeCompare(b.timestamp || ""));
+
+  if (matches.length === 0) {
+    resultsEl.innerHTML = `
+      <div class="empty">
+        No records found for VIN <code style="font-family:var(--mono);color:var(--accent)">${vin}</code>.<br>
+        <br>This prototype ships with a single anchored record for demo purposes.
+        Try <code style="font-family:var(--mono);color:var(--accent)">1HGCM82633A004352</code>.
+      </div>`;
+    $("search").disabled = false;
+    return;
+  }
+
+  // Compute hashes + render pending cards immediately, then fill in on-chain status per record.
+  const provider = new JsonRpcProvider(RPC_URL);
+  const contract = new Contract(CONTRACT, ABI, provider);
+
+  // Render skeletons first so the UI is responsive
+  resultsEl.innerHTML = matches.map((r, i) => renderCard(r, i, null)).join("");
+
+  // Then verify each record concurrently
+  await Promise.all(matches.map(async (r, i) => {
+    let hash;
+    try { hash = hashRecord(r); }
+    catch (e) {
+      replaceCard(i, renderCard(r, i, { error: e.message }));
+      return;
+    }
+    try {
+      const [ts, bn, sub] = await contract.getAnchor(hash);
+      if (ts === 0n) {
+        replaceCard(i, renderCard(r, i, { hash, anchored: false }));
+      } else {
+        replaceCard(i, renderCard(r, i, {
+          hash, anchored: true,
+          timestamp: Number(ts), block: bn.toString(), submitter: sub,
+        }));
+      }
+    } catch (e) {
+      replaceCard(i, renderCard(r, i, { hash, error: e.message }));
+    }
+  }));
+
+  $("search").disabled = false;
+}
+
+function replaceCard(i, html) {
+  const cur = document.querySelector(`[data-idx="${i}"]`);
+  if (!cur) return;
+  const tmp = document.createElement("div");
+  tmp.innerHTML = html;
+  cur.replaceWith(tmp.firstElementChild);
+}
+
+function renderCard(r, i, status) {
+  const loading = status === null;
+  const anchored = status && status.anchored;
+  const err = status && status.error;
+
+  let cardClass = "record-card";
+  if (loading) cardClass += " pending";
+  else if (!anchored && !err) cardClass += " unanchored";
+
+  let statusHTML = "";
+  if (loading) {
+    statusHTML = `<span class="status pending">… verifying on-chain</span>`;
+  } else if (err) {
+    statusHTML = `<span class="status bad">error: ${err}</span>`;
+  } else if (anchored) {
+    statusHTML = `<span class="status ok">✓ Anchored on Base Sepolia</span>`;
+  } else {
+    statusHTML = `<span class="status bad">✗ Not found on this contract</span>`;
+  }
+
+  const hashRow = status && status.hash
+    ? `<div class="k">Record hash</div><div class="v">${status.hash}</div>`
+    : `<div class="k">Record hash</div><div class="v">…</div>`;
+
+  let onchainRows = "";
+  if (anchored) {
+    const isoTime = new Date(status.timestamp * 1000).toISOString().replace("T", " ").slice(0, 19) + " UTC";
+    onchainRows = `
+      <div class="k">Anchored at</div><div class="v plain">${isoTime}</div>
+      <div class="k">Block</div><div class="v">${status.block}</div>
+      <div class="k">Submitted by</div>
+        <div class="v"><a href="${EXPLORER}/address/${status.submitter}" target="_blank" rel="noreferrer">${status.submitter}</a></div>
+    `;
+  }
+
+  const prev = r.previousRecordHash;
+  const chainHTML = prev
+    ? `<div class="chain-link">
+         Previous record: <span class="mono">${shortHash(prev)}</span>
+       </div>`
+    : `<div class="chain-link">First record for this VIN (no previous link).</div>`;
+
+  return `
+<div class="${cardClass}" data-idx="${i}">
+  <div class="record-head">
+    <span class="event-badge">${fmtEvent(r.eventType)}</span>
+    <span class="event-date">${fmtEventDate(r.timestamp)}</span>
+  </div>
+  <div class="event-summary">
+    ${fmtMileage(r.mileage, r.odometerUnit)} · ${fmtLocation(r.location)}
+  </div>
+  <div class="kv">
+    <div class="k">Status</div><div class="v plain">${statusHTML}</div>
+    ${hashRow}
+    ${onchainRows}
+    <div class="k">Source ID</div><div class="v plain">${r.sourceIdentifier || "—"}</div>
+    <div class="k">Contributor</div><div class="v">${r.contributorAddress}</div>
+  </div>
+  ${chainHTML}
+  <details>
+    <summary>View full record JSON</summary>
+    <pre>${JSON.stringify(r, null, 2)}</pre>
+  </details>
+</div>`;
+}
+
+$("search").addEventListener("click", search);
+$("vin").addEventListener("keydown", (e) => { if (e.key === "Enter") search(); });
+
+// Auto-run on page load with the default VIN
+search();
+</script>
+</body>
+</html>

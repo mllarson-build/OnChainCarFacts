@@ -1,0 +1,16 @@
+[
+  {
+    "schemaVersion": "1.0",
+    "recordId": "550e8400-e29b-41d4-a716-446655440000",
+    "vin": "1HGCM82633A004352",
+    "eventType": "service",
+    "location": { "countryCode": "US", "adminArea": "TX", "postalCode": "75001" },
+    "mileage": 45000,
+    "odometerUnit": "mi",
+    "timestamp": "2025-06-15T10:30:00-05:00",
+    "recordCreatedAt": "2025-06-15T11:00:00-05:00",
+    "contributorAddress": "0x1234567890abcdef1234567890abcdef12345678",
+    "previousRecordHash": null,
+    "sourceIdentifier": "INV-2025-0042"
+  }
+]
