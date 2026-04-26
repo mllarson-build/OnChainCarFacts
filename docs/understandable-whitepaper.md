@@ -6,8 +6,6 @@
 **Code:** `anchor/` directory in this repo
 **Deployed contract:** `RecordAnchor` at `0x1380b4cBC2Bdb10e46F720124C8174bc363aE4bF` on Base Sepolia (chain id 84532)
 
-**A note on how we worked.** Three of us are MBA students; none of us came in as Solidity developers. We used Claude (Anthropic) to help write and debug the smart-contract code and the test scaffolding, and to research citations. We wrote and edited this paper ourselves. Anything we cite here, we have read. Anything we describe in the contract, we can walk through line by line.
-
 ---
 
 ## 1. The problem
@@ -38,34 +36,84 @@ The combination none of these provide is: free verification by anyone, records t
 
 ---
 
-## 3. What we built
+## 3. Key components of an open vehicle history system
 
-Our project is a smart contract that anchors vehicle history records on a public blockchain, plus a static webpage that anyone can use to verify a record. We narrowed the scope after early feedback from Prof. Zetlin-Jones (April 15) — the original proposal tried to do six things at once, and we are three MBA students with limited Solidity experience. We focused on getting the foundation right: record anchoring.
+For an open, blockchain-based vehicle history system to actually replace Carfax for a used-car buyer, five components have to work together. We built the first one. The other four are real and we did not solve them; we describe them here so the boundaries of our contribution are clear.
 
-### 3.1 The basic idea
+1. **Record anchoring.** A way to prove that a vehicle history record existed in a specific form at a specific time, with no single company controlling the proof. Detailed in §4 below. Without this layer, none of the other four components work, because there is no fixed reference point that the others can attach claims to.
 
-A vehicle history record is structured data: a VIN, an event type (accident, service, odometer reading, sale, etc.), a date, a location, a mileage, and the address of whoever submitted it. We turn that record into a 32-byte fingerprint using a standard hash function called keccak256 [S3]. The fingerprint changes completely if any character of the record changes.
+2. **Identity / attestation.** A way to know who actually filed a record. A record submitted by "John's Auto Body, state-certified inspector #12345" is more useful than a record from an anonymous Ethereum wallet. The standard piece of plumbing for this is the Ethereum Attestation Service (EAS) [S6], where credentialing organizations (state DMVs, mechanic licensing boards, insurance carriers) issue on-chain attestations binding a wallet to a real-world identity.
 
-We store the fingerprint on a public blockchain. The blockchain records the time the fingerprint was stored and which Ethereum address stored it.
+3. **Reputation / weighting.** A way to weight records by how trustworthy the submitter is. A record from a verified state DMV should count more than a record from a wallet that registered yesterday. This is a layer of scoring logic on top of the identity layer. It does not require new on-chain infrastructure — it can run as off-chain analytics over the anchored record stream.
+
+4. **Privacy.** A way to keep personal data (owner names, addresses, possibly even VINs in jurisdictions that treat them as personal data) out of public view, while still letting buyers verify records. This is where GDPR Article 17 [S7] becomes a real constraint on EU expansion. Possible techniques include hashing identifying fields, off-chain storage of personal data with on-chain commitments, and zero-knowledge proofs that let a buyer verify "this car has no salvage events" without revealing the rest of the history.
+
+5. **Fraud detection.** Data analysis across the record stream to surface patterns that suggest fraud — odometers that decrease, vehicles registered in two countries on the same day, claim history that contradicts service records. This is normal analytics work that runs on top of the anchored record stream and does not require any new on-chain code.
+
+Three observations about this list:
+
+- **Components 2 through 5 all depend on component 1.** Identity attestations have to attest to *something*, and that something is an anchored record. Reputation weights records. Privacy reveals fields of records. Fraud detection analyzes a record stream. This is why we treated anchoring as the foundation worth getting right first.
+- **Components 1, 2, and 4 require on-chain infrastructure. Components 3 and 5 do not.** Reputation and fraud detection are off-chain analytics that read the chain. This matters for the cost story: most of the gas budget for a real production system goes to anchoring and identity, not to analytics.
+- **Component 5 is roughly what Carfax sells today.** A federated database of records combined with public analytics tools is most of what a Carfax report actually is. The point of the anchoring + identity foundation is to let anyone build that analytics layer, rather than letting one company charge $44.99 a report to be the only one who can.
+
+The next section walks through component 1 — record anchoring — in detail, including the actual contract code we deployed.
+
+---
+
+## 4. What we built (record anchoring, in detail)
+
+Our project is a smart contract that anchors vehicle history records on a public blockchain, plus a static webpage that anyone can use to verify a record. We narrowed the scope after early feedback from Prof. Zetlin-Jones — the original proposal tried to do six things at once, and we are three MBA students with limited Solidity experience. We focused on getting component 1 from the previous section — record anchoring — right.
+
+### 4.1 The basic idea
+
+A vehicle history record is structured data: a VIN, an event type (accident, service, odometer reading, sale, etc.), a date, a location, a mileage, and the address of whoever submitted it. We turn that record into a 32-byte hash using a standard hash function called keccak256 [S3]. The hash changes completely if any character of the record changes.
+
+We store the fingerprint/hash on a public blockchain. The blockchain records the time the hash was stored and which Ethereum address stored it.
 
 To verify a record later, anyone can:
 
-1. Compute the fingerprint of the record they have.
-2. Look up the fingerprint on the blockchain.
-3. If the fingerprint is on the chain, the record existed in this exact form at or before the recorded blockchain time. If the fingerprint differs, the record has been changed.
+1. Compute the hash of the record they have.
+2. Look up the hash on the blockchain.
+3. If the hash is on the chain, the record existed in this exact form at or before the recorded blockchain time. If the hash differs, the record has been changed.
 
-The actual record (with personal data) stays in a normal database. Only the fingerprint goes on-chain. This matters for privacy.
+The actual record (with personal data) stays in a normal database. Only the hash goes on-chain. This matters for privacy.
 
-### 3.2 The smart contract
+### 4.2 The smart contract
 
 Our contract is `RecordAnchor.sol` — about 110 lines of Solidity. It does two things:
 
-1. `anchor(hash)` — stores a single record fingerprint on-chain. Anyone can call this. Each fingerprint can only be stored once.
-2. `anchorRoot(root)` — stores a Merkle root, which is a single fingerprint that summarizes a batch of records. This is how we keep costs low when anchoring many records: combine all of them into one Merkle root, then anchor only the root. Later, anyone can prove a specific record was in the batch using a Merkle proof.
+1. `anchor(hash)` — stores a single record hash on-chain. Anyone can call this. Each hash can only be stored once.
+2. `anchorRoot(root)` — stores a Merkle root, which is a single hash that summarizes a batch of records. This is how we keep costs low when anchoring many records: combine all of them into one Merkle root, then anchor only the root. Later, anyone can prove a specific record was in the batch using a Merkle proof.
 
 The contract is deployed on Base Sepolia (a free Ethereum test network) at `0x1380b4cBC2Bdb10e46F720124C8174bc363aE4bF`. The source code is verified on Basescan, which means anyone can read the actual code, not just compiled bytecode.
 
-### 3.3 What it cost (real numbers from our deployment)
+#### The four most important lines of code
+
+The entire mechanism described in §4.1 runs through one function:
+
+```solidity
+function anchor(bytes32 hash) external {
+    require(anchors[hash].timestamp == 0, "Already anchored");
+    anchors[hash] = Anchor(block.timestamp, block.number, msg.sender);
+    emit Anchored(hash, block.timestamp, block.number, msg.sender);
+}
+```
+
+Walking through it line by line:
+
+1. **`function anchor(bytes32 hash) external`** — Anyone can call this. There is no admin, no whitelist, no permission system. This is intentional: anchoring is supposed to be censorship-resistant.
+
+2. **`require(anchors[hash].timestamp == 0, "Already anchored")`** — The most important line in the contract. It refuses the transaction if this hash has already been anchored. Without this line, anyone who later discovered an old record could re-anchor it with their own wallet and a fresh timestamp, claiming they were the original filer. The check costs essentially nothing in gas (one storage read) but it is what guarantees that the original submitter and original timestamp can never be overwritten. Every other security property of the system depends on this single line being there.
+
+3. **`anchors[hash] = Anchor(block.timestamp, block.number, msg.sender)`** — Writes three pieces of metadata to permanent on-chain storage: the timestamp the chain assigned to the block, the block number, and the wallet address that paid for the transaction. Note what is *not* written: VINs, mileage, location, owner names. Only the hash and metadata. The actual record content stays in our off-chain database.
+
+4. **`emit Anchored(...)`** — Emits a public log entry. Block explorers like Basescan and our own verifier UI both read these log entries to discover anchors without scanning every storage slot, which would be slow and expensive. This is how the verifier website finds anchored records without trusting any single API.
+
+A related function, `anchorRoot(root)`, does the same thing but for a Merkle root that summarizes a batch of records. Anchoring a batch of 1,000 records as one root costs roughly the same gas as anchoring one record, and any specific record can later be proven to be in the batch using a short Merkle proof (about 10 hashes deep for a batch of 1,000).
+
+A third function, `canonicalHash(...)`, is a Solidity copy of our off-chain hashing logic. It is never called in production. It exists only for tests, which call it with the same inputs used by the JavaScript hashing code in the verifier and assert that both produce byte-identical output. If those ever drift, the verifier silently fails for every record going forward, so we test it explicitly.
+
+### 4.3 What it cost (real numbers from our deployment)
 
 | Operation | Gas used |
 |---|---|
@@ -74,13 +122,13 @@ The contract is deployed on Base Sepolia (a free Ethereum test network) at `0x13
 
 These are measured from our actual transactions on Base Sepolia. At Base mainnet's typical gas prices (well under a cent per record once batched into a Merkle root), anchoring at the scale of every used-car sale in the US per year is comfortably under $1 million per year in total gas — small relative to a market where Carfax alone sells reports at $44.99 a piece.
 
-### 3.4 The verifier website
+### 4.4 The verifier website
 
 `anchor/verifier/index.html` is a static webpage. The user pastes in a record (as JSON), and the page computes the fingerprint in their browser, calls our contract over a public Ethereum RPC, and tells them one of three things:
 
-- **ANCHORED** — the fingerprint is on the chain. The record has not been altered.
-- **NOT ANCHORED** — the fingerprint is not on the chain. The record was never registered.
-- **HASH MISMATCH** — the page computed a different fingerprint than what's on chain for this record. Someone changed the record after it was anchored.
+- **ANCHORED** — the hash is on the chain. The record has not been altered.
+- **NOT ANCHORED** — the hash is not on the chain. The record was never registered.
+- **HASH MISMATCH** — the page computed a different hash than what's on chain for this record. Someone changed the record after it was anchored.
 
 There is also a "Tamper" button that flips one digit of a sample record so you can watch the verifier change its answer in real time. We use this in the live demo.
 
@@ -88,7 +136,7 @@ The verifier requires no wallet, no private key, and no crypto knowledge. A used
 
 ---
 
-## 4. Infrastructure
+## 5. Infrastructure
 
 What our demo uses today:
 
@@ -105,12 +153,12 @@ What a real production deployment would also need (we did not build these):
 
 ---
 
-## 5. Pros and cons
+## 6. Pros and cons
 
 ### Where blockchain genuinely helps
 
 - **Verifiable by anyone.** The verifier website works with no signup, no payment, and no Carfax account. Anyone holding a record can check it.
-- **No single company can rewrite history.** Once a fingerprint is on-chain, no one — including us — can change it. A future buyer of our company cannot quietly delete records.
+- **No single company can rewrite history.** Once a hash is on-chain, no one — including us — can change it. A future buyer of our company cannot quietly delete records.
 - **Free reads.** Reading the chain costs nothing. There is no $44.99 paywall.
 - **Cheap to write on Layer 2.** Our measured cost per record is fractions of a cent on Base when anchored in batches.
 - **Cross-border by default.** A blockchain doesn't care whether the record came from Texas, Mexico, or Germany. A Carfax report often does.
@@ -139,7 +187,7 @@ These are real gaps. We chose to spend our time on a working contract, a real on
 
 ---
 
-## 6. Conclusion
+## 7. Conclusion
 
 A used-car buyer should not have to depend on one private company to know whether a vehicle's history is what the seller claims. Anchoring vehicle history records on a public blockchain means anyone can verify a record without relying on Carfax, the seller, or us. Our deployed contract and verifier demonstrate the mechanism end to end, on a real public test network, with real measured per-record costs that are small compared to the size of the vehicle history market.
 
