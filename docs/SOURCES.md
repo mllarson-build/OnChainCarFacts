@@ -77,7 +77,17 @@ Each is currently tagged `[S?:tag]` in `problem1-record-anchoring.md`.
 
 ### Confirmed entries
 
-(None yet — add entries here as sources are read and verified.)
+[S1] "Carfax hit with $50 million antitrust lawsuit by 120 dealerships" — Automotive News, 2013-04-24. https://www.autonews.com/article/20130424/RETAIL07/130429941/carfax-hit-with-50-million-antitrust-lawsuit-by-120-dealerships/. Accessed 2026-04-24.
+    Used to support: Carfax's ~90% market share claim and the $50M / 120+ dealer antitrust class-action figure cited in §1. The article reports the complaint's allegation of ~90% market share via exclusive agreements with OEMs and listing platforms.
+    Read status: [x] skimmed  [x] read in full  [x] verified claim in source
+
+[S2] "Base — Base Documentation" — Base / Coinbase. https://docs.base.org/get-started/base. Accessed 2026-04-24.
+    Used to support: Base is an OP-Stack optimistic rollup on Ethereum operated by Coinbase, with ~2s block times and no native token. Cited in §3.3 and §4 as the rollup we deployed to.
+    Read status: [x] skimmed  [x] read in full  [x] verified claim in source
+
+[S3] "Hashing with Keccak256" — Solidity by Example (Solidity 0.8.26). https://solidity-by-example.org/hashing/. Accessed 2026-04-24. Cross-referenced with the Solidity language documentation's description of `keccak256(bytes memory) returns (bytes32)` as a built-in.
+    Used to support: keccak256 is the native Ethereum/Solidity hash function, producing a 32-byte output, suitable for identifying canonicalized records. Cited in §3.1.
+    Read status: [x] skimmed  [x] read in full  [x] verified claim in source
 
 ---
 
