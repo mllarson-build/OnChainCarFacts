@@ -118,6 +118,25 @@
     color: var(--muted); text-align: center; padding: 40px 20px;
     font-size: 14px;
   }
+  .vin-samples {
+    display: flex; flex-wrap: wrap; gap: 6px;
+    margin-top: 12px; align-items: center;
+  }
+  .vin-samples .label {
+    color: var(--muted); font-size: 12px; margin-right: 4px;
+  }
+  .vin-samples button.vin-pill {
+    background: var(--panel-2); color: var(--accent);
+    border: 1px solid var(--border); border-radius: 4px;
+    padding: 4px 8px; font-family: var(--mono); font-size: 11.5px;
+    font-weight: 500; cursor: pointer;
+  }
+  .vin-samples button.vin-pill:hover {
+    border-color: var(--accent);
+  }
+  .vin-samples button.vin-pill .ev {
+    color: var(--muted); margin-left: 6px; font-weight: 400;
+  }
   details summary {
     cursor: pointer; color: var(--muted); font-size: 12px;
     margin-top: 10px;
@@ -148,6 +167,13 @@
     <input type="text" id="vin" value="1HGCM82633A004352" spellcheck="false">
     <div class="row">
       <button id="search">Search on-chain history</button>
+    </div>
+    <div class="vin-samples">
+      <span class="label">Anchored demo VINs:</span>
+      <button class="vin-pill" data-vin="1HGCM82633A004352">1HGCM82633A004352<span class="ev">service</span></button>
+      <button class="vin-pill" data-vin="5YJ3E1EA7KF315872">5YJ3E1EA7KF315872<span class="ev">service</span></button>
+      <button class="vin-pill" data-vin="WBA8E9C50GK647391">WBA8E9C50GK647391<span class="ev">accident</span></button>
+      <button class="vin-pill" data-vin="1FTFW1ET5DFA12345">1FTFW1ET5DFA12345<span class="ev">inspection</span></button>
     </div>
     <div class="hint">
       This page loads records from <code>records.json</code>, filters by VIN,
@@ -256,8 +282,7 @@ async function search() {
     resultsEl.innerHTML = `
       <div class="empty">
         No records found for VIN <code style="font-family:var(--mono);color:var(--accent)">${vin}</code>.<br>
-        <br>This prototype ships with a single anchored record for demo purposes.
-        Try <code style="font-family:var(--mono);color:var(--accent)">1HGCM82633A004352</code>.
+        <br>Try one of the anchored demo VINs listed above the search box.
       </div>`;
     $("search").disabled = false;
     return;
@@ -372,6 +397,12 @@ function renderCard(r, i, status) {
 
 $("search").addEventListener("click", search);
 $("vin").addEventListener("keydown", (e) => { if (e.key === "Enter") search(); });
+document.querySelectorAll("button.vin-pill").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    $("vin").value = btn.dataset.vin;
+    search();
+  });
+});
 
 // Auto-run on page load with the default VIN
 search();
