@@ -23,12 +23,14 @@ more about the vehicle than the buyer, and that gap is monetised by an
 intermediary industry that sells vehicle-history reports. In the US, that
 market is dominated by Carfax, which holds roughly 90% share through
 exclusive agreements with major listing platforms and certified-pre-owned
-programs `[S1]`. A single consumer report retails at
-\$40+ `[S?:carfax-pricing]`. Annual US vehicle fraud — odometer rollback,
-title washing, undisclosed accidents, cross-jurisdiction laundering — is
-estimated in the single-digit billions of dollars per year
-`[S?:vehicle-fraud-cost]`, with roughly 450,000 odometer-rollback vehicles
-alone per year per NHTSA `[S?:vehicle-fraud-cost]`.
+programs `[S1]`. A single consumer report retails at \$44.99 `[S4]`.
+Odometer rollback alone, the most-studied US vehicle-fraud category,
+is estimated by NHTSA at approximately 452,000 cases per year imposing
+roughly \$1.06 billion in annual consumer cost (2002 figures, the most
+recent nationwide NHTSA estimate; confidence bounds \$737M–\$1,376M)
+`[S5]`. Title washing, undisclosed accidents, and cross-jurisdiction
+laundering compound this; aggregate US vehicle-fraud cost is widely
+cited in the single-digit billions per year `[S?:vehicle-fraud-aggregate]`.
 
 The deeper issue is not price. It is that the *integrity* of the underlying
 record depends on one private company remaining solvent, honest, and
@@ -167,7 +169,15 @@ property *P* concrete, not to ship a product.
 5. **Deployment.** Base Sepolia, contract verified on Basescan,
    deployment record in `anchor/deployments.json` with block number, gas
    used, and deployer address. Base Sepolia was chosen for free testnet
-   ETH and EVM parity with mainnet `[S2]`.
+   ETH and EVM parity with mainnet `[S2]`. Measured costs from our own
+   deployment: contract creation consumed **549,670 gas** (deploy tx
+   `0xf566c9…fbfcd`); a representative single-record `anchor(bytes32)`
+   call consumed **90,594 gas** (sample tx
+   `0xad6fd0…02676`). These are the only two gas figures in this paper
+   measured from our own deployment rather than cited as industry
+   ballparks; they are the per-call upper bound for the unbatched
+   (Option 1) path. The amortised Merkle-root (Option 3) per-record
+   cost falls roughly with batch size and is left as ballpark `[S2]`.
 6. **Verifier UI.** `anchor/verifier/index.html` is a zero-dependency
    static page that canonicalizes a pasted record, computes its hash in
    the browser, calls `getAnchor(hash)` on the deployed contract over a
@@ -213,10 +223,10 @@ What the demo relies on today:
 
 What a production deployment would additionally require (noted here but
 not solved): an attestation layer (on-chain attestations such as EAS
-`[S?:eas]`, verifiable credentials, or domain registries) to bind
+`[S6]`, verifiable credentials, or domain registries) to bind
 records to identities; a privacy layer (hashed field commitments,
 Merkle revelation, or ZK proofs over canonicalised records) to reconcile
-on-chain immutability with GDPR Article 17 `[S?:gdpr-erasure]`; cross-
+on-chain immutability with GDPR Article 17 `[S7]`; cross-
 jurisdiction data-ingest partnerships; and a sustainable model for who
 pays the gas at scale.
 
@@ -302,7 +312,7 @@ because it is the backbone of this paper's argument:
   record is not, and anchoring it publicly-and-immutably commits to the
   existence of *something* about that VIN at that time. Reconciling
   Article 17 with a permanently observable anchor is a real open
-  problem, not a documentation-only one `[S?:gdpr-erasure]`.
+  problem, not a documentation-only one `[S7]`.
 - **Honest positioning vs. alternatives.** For property *P* alone, OTS
   is cheaper and simpler. For property *P* alone, CT would cover most of
   the same ground without a blockchain. The EVM choice is defensible
@@ -319,9 +329,11 @@ anchor of the same records as stretch evidence for §4.2's
 "close-call-on-property-*P*-alone" claim. These were deprioritised in
 favour of the verifier UI and the threat-model write-up, because the
 intellectual core of this project is the tradeoff argument, not the
-cost number. The cost figures cited in §3 and §4 therefore remain
-industry-standard ballparks (`[S2]`), not measurements from
-our own deployment `[OWN]`.
+cost number. The two gas figures we *do* report from our own deployment
+(549,670 for contract creation; 90,594 for one `anchor(bytes32)` call,
+both in §3.1) are concrete; the broader L1-vs-L2 amortised-batch and
+USD-equivalent cost claims in §3 and §4 remain industry-standard
+ballparks (`[S2]`), not our own measurements `[OWN]`.
 
 ## 5. Anchoring as a primitive for the larger protocol
 
@@ -349,7 +361,7 @@ custodian. The substrate choice (CT, OTS, EVM) affects *how easy*
 primitives 2–5 are to build on top of it, not whether they are buildable.
 That is the honest argument for EVM: not that it wins property *P* in
 isolation, but that primitives 2–5 already have composable EVM
-infrastructure (on-chain attestations `[S?:eas]`, ZK verifier contracts,
+infrastructure (on-chain attestations `[S6]`, ZK verifier contracts,
 access-control libraries) and building them on CT or OTS would require
 more glue `[OWN]`.
 
@@ -422,7 +434,7 @@ chain over a public RPC.
 
 ## Appendix C — Bibliography and limitations of attribution
 
-**Confirmed sources used in this paper.** Three sources are read in full
+**Confirmed sources used in this paper.** Seven sources are read in full
 and verified against the claims they back:
 
 - **[S1]** "Carfax hit with $50 million antitrust lawsuit by 120
@@ -435,18 +447,40 @@ and verified against the claims they back:
 - **[S3]** "Hashing with Keccak256," Solidity by Example (Solidity
   0.8.26), cross-referenced with the Solidity language documentation's
   native-built-in description. Supports the keccak256 choice in §3.1.
+- **[S4]** "How Much Is a Carfax Report? Compare Costs & Alternatives,"
+  VinAudit, vinaudit.com/how-much-is-a-carfax-report (price tracker,
+  current as of 2024-12-14). Supports the \$44.99 single-report retail
+  price cited in §1.
+- **[S5]** *Preliminary Report: The Incidence Rate of Odometer Fraud*,
+  DOT HS 809 441, NHTSA Office of Programs and Policy, April 2002.
+  Executive Summary, p. vi: "approximately 452,000 cases of odometer
+  fraud per year in the United States"; p. vii: average cost of \$2,336
+  per case, "\$1,056 million per year (confidence bounds from \$737
+  million to \$1,376 million)." Supports the §1 odometer-fraud incidence
+  and consumer-cost figures.
+- **[S6]** "Welcome to EAS," Ethereum Attestation Service official
+  documentation, docs.attest.org. Source repository at
+  github.com/ethereum-attestation-service/eas-contracts (`EAS.sol`,
+  `SchemaRegistry.sol`). Supports the §3.3 / §5 reference to EAS as the
+  on-chain attestation primitive that a production attestation layer
+  would compose with.
+- **[S7]** "Article 17 — Right to erasure ('right to be forgotten'),"
+  Regulation (EU) 2016/679 (GDPR), Official Journal of the European
+  Union, mirrored at gdpr-info.eu/art-17-gdpr. Supports the §3.3 and
+  §4.4 references to the right-to-erasure obligation that conflicts
+  with on-chain immutability.
 
 **Claims still carrying `[S?:...]` placeholders.** The remaining
-industry-context claims in §1–§2 and §3 (Carfax retail price, fraud cost
-estimate, RFC 3161/4998, NMVTIS, certificate transparency /
-RFC 6962, permissioned-chain reference, L2-rollup concept overview,
-OpenTimestamps, OpenZeppelin MerkleProof, EAS, GDPR Article 17, and
-Ethereum `block.timestamp` proposer-discretion rules) are preserved as
-`[S?]` rather than replaced with sources I did not read end-to-end, per
-the syllabus's requirement that cited sources be sources the student has
-actually read and understood. Reviewers should treat those numbers and
-references as industry-standard ballparks drawn from common public
-knowledge, not as verified citations.
+industry-context claims in §1–§3 (the aggregate vehicle-fraud cost
+figure beyond NHTSA's odometer-only estimate, RFC 3161/4998, NMVTIS,
+certificate transparency / RFC 6962, permissioned-chain reference,
+L2-rollup concept overview, OpenTimestamps, OpenZeppelin MerkleProof,
+and Ethereum `block.timestamp` proposer-discretion rules) are preserved
+as `[S?]` rather than replaced with sources I did not read end-to-end,
+per the syllabus's requirement that cited sources be sources the
+student has actually read and understood. Reviewers should treat those
+numbers and references as industry-standard ballparks drawn from common
+public knowledge, not as verified citations.
 
 **Attribution of analysis.** Claims tagged `[OWN]` are my own analysis.
 Claims tagged `[CC]` were framings proposed by Claude (Anthropic's
